@@ -13,12 +13,12 @@ if (
 
 const connectionString = rawConnectionString;
 
-const isCloudPostgres = connectionString.includes('neon.tech') || 
-                        connectionString.includes('supabase.com') || 
-                        connectionString.includes('render.com') || 
-                        connectionString.includes('railway.app') ||
-                        connectionString.includes('aws.neon.tech') ||
-                        connectionString.includes('sslmode=require');
+const isCloudPostgres = connectionString.includes('neon.tech') ||
+  connectionString.includes('supabase.com') ||
+  connectionString.includes('render.com') ||
+  connectionString.includes('railway.app') ||
+  connectionString.includes('aws.neon.tech') ||
+  connectionString.includes('sslmode=require');
 
 export const pool = new Pool({
   connectionString: connectionString || undefined,

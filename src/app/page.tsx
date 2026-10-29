@@ -850,8 +850,9 @@ export default function Home() {
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">WhatsApp Phone Number</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">WhatsApp Phone Number *</label>
               <input
+                required
                 type="tel"
                 placeholder="+91 9876543210"
                 value={formData.phone}
@@ -861,8 +862,9 @@ export default function Home() {
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">College / Organization</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">College / Organization *</label>
               <input
+                required
                 type="text"
                 placeholder="IISc / Company"
                 value={formData.organization}
@@ -872,8 +874,9 @@ export default function Home() {
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">City</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">City *</label>
               <input
+                required
                 type="text"
                 placeholder="Bangalore"
                 value={formData.city}

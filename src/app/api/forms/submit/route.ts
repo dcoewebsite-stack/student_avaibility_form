@@ -19,9 +19,15 @@ export async function POST(req: Request) {
       referral_code,
     } = body;
 
-    if (!email || !first_name) {
+    if (
+      !email?.trim() ||
+      !first_name?.trim() ||
+      !phone?.trim() ||
+      !organization?.trim() ||
+      !city?.trim()
+    ) {
       return NextResponse.json(
-        { error: 'First name and email are required fields.' },
+        { error: 'First name, email, WhatsApp phone number, college/organization, and city are mandatory fields.' },
         { status: 400 }
       );
     }
