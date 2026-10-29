@@ -1,7 +1,17 @@
 import { Pool } from 'pg';
 
 // Supports Cloud-hosted Serverless PostgreSQL (Neon.tech, Supabase Postgres, Render, Railway, etc.)
-const connectionString = process.env.DATABASE_URL || '';
+let rawConnectionString = (process.env.DATABASE_URL || '').trim();
+
+// Clean up accidental surrounding quotes from copy-pasting in Vercel / env dashboards
+if (
+  (rawConnectionString.startsWith('"') && rawConnectionString.endsWith('"')) ||
+  (rawConnectionString.startsWith("'") && rawConnectionString.endsWith("'"))
+) {
+  rawConnectionString = rawConnectionString.slice(1, -1).trim();
+}
+
+const connectionString = rawConnectionString;
 
 const isCloudPostgres = connectionString.includes('neon.tech') || 
                         connectionString.includes('supabase.com') || 
@@ -11,17 +21,22 @@ const isCloudPostgres = connectionString.includes('neon.tech') ||
                         connectionString.includes('sslmode=require');
 
 export const pool = new Pool({
-  connectionString: connectionString || 'postgresql://postgres:postgres@localhost:5432/gamyform',
+  connectionString: connectionString || undefined,
   // Enable SSL automatically for cloud-hosted PostgreSQL providers
   ssl: isCloudPostgres || process.env.NODE_ENV === 'production'
     ? { rejectUnauthorized: false }
     : false,
   max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000,
 });
 
 export async function query(text: string, params?: any[]) {
+  if (!connectionString) {
+    console.error('DATABASE_URL is not configured in environment variables.');
+    throw new Error('DATABASE_URL is missing. Please add it to your environment variables in Vercel.');
+  }
+
   const start = Date.now();
   try {
     const res = await pool.query(text, params);

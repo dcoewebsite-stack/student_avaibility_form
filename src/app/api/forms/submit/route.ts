@@ -139,9 +139,12 @@ export async function POST(req: Request) {
       }
 
       console.error('Database Insert Error:', dbErr);
-      userResult = {
-        rows: [{ id: 'mock-user-uuid-123', total_points: pointsAwarded }],
-      };
+      return NextResponse.json(
+        {
+          error: `Database connection error: ${dbErr.message || 'Failed to save to Neon DB'}. Please verify DATABASE_URL is set in Vercel Environment Variables and redeploy.`,
+        },
+        { status: 500 }
+      );
     }
 
     const userId = userResult.rows[0].id;
