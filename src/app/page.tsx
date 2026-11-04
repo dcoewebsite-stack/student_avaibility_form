@@ -117,6 +117,7 @@ export default function Home() {
     designation: '',
     city: '',
     attendance_preference: 'in-person',
+    referral_source: 'whatsapp',
     referral_code: '',
   });
 
@@ -125,7 +126,11 @@ export default function Home() {
       const params = new URLSearchParams(window.location.search);
       const ref = params.get('ref');
       if (ref) {
-        setFormData(prev => ({ ...prev, referral_code: ref.trim().toUpperCase() }));
+        setFormData(prev => ({ 
+          ...prev, 
+          referral_code: ref.trim().toUpperCase(),
+          referral_source: 'friend_referral',
+        }));
       }
     }
   }, []);
@@ -133,6 +138,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [claimMessage, setClaimMessage] = useState<string>('');
+  const [claimError, setClaimError] = useState<string>('');
   const [submitError, setSubmitError] = useState<any>(null);
 
   // Returning Participant Lookup State
@@ -298,6 +304,7 @@ export default function Home() {
 
   const handleClaimReward = async (rewardId: string) => {
     if (!results?.userId) return;
+    setClaimError('');
     try {
       const res = await fetch('/api/rewards/claim', {
         method: 'POST',
@@ -307,9 +314,11 @@ export default function Home() {
       const data = await res.json();
       if (res.ok) {
         setClaimMessage(data.message);
+        setClaimError('');
         if (data.claimCode) {
           setResults((prev: any) => ({
             ...prev,
+            totalPoints: typeof data.remainingPoints === 'number' ? data.remainingPoints : prev?.totalPoints,
             claimedRewards: [
               ...(prev?.claimedRewards || []),
               {
@@ -322,10 +331,12 @@ export default function Home() {
           }));
         }
       } else {
-        alert(data.error);
+        setClaimError(data.error || 'Failed to claim reward. Please try again.');
+        setClaimMessage('');
       }
     } catch (e) {
-      alert('Failed to claim reward');
+      setClaimError('Network error — unable to reach server. Please check your connection.');
+      setClaimMessage('');
     }
   };
 
@@ -885,10 +896,85 @@ export default function Home() {
               />
             </div>
 
-            <div>
+            {/* Row 4: How did you hear about us */}
+            <div className="sm:col-span-2">
+              <label className="text-xs font-semibold text-slate-700 block mb-2">How did you hear about us?</label>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="referral_source"
+                    value="whatsapp"
+                    checked={formData.referral_source === 'whatsapp'}
+                    onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
+                  />
+                  <span>WhatsApp</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="referral_source"
+                    value="linkedin"
+                    checked={formData.referral_source === 'linkedin'}
+                    onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
+                  />
+                  <span>LinkedIn</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="referral_source"
+                    value="instagram"
+                    checked={formData.referral_source === 'instagram'}
+                    onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
+                  />
+                  <span>Instagram</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="referral_source"
+                    value="friend_referral"
+                    checked={formData.referral_source === 'friend_referral'}
+                    onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
+                  />
+                  <span>Friend Referral</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Row 5: Attendance Preference */}
+            <div className="sm:col-span-2">
+              <label className="text-xs font-semibold text-slate-700 block mb-2">Attendance Preference</label>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="attendance"
+                    value="in-person"
+                    checked={formData.attendance_preference === 'in-person'}
+                    onChange={(e) => setFormData({ ...formData, attendance_preference: e.target.value })}
+                  />
+                  <span>In-Person at IISc Campus <span className="text-emerald-600 font-semibold text-[11px]">(+5 bonus pts)</span></span>
+                </label>
+                <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="attendance"
+                    value="online"
+                    checked={formData.attendance_preference === 'online'}
+                    onChange={(e) => setFormData({ ...formData, attendance_preference: e.target.value })}
+                  />
+                  <span>Fully Online</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Row 6: Referral Code (Optional) */}
+            <div className="sm:col-span-2">
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-sky-700 flex items-center gap-1">
-                  <Share2 className="w-3 h-3"/> Referral Code (Optional)
+                  <Share2 className="w-3.5 h-3.5"/> Referral Code (Optional)
                 </label>
                 {formData.referral_code && formData.referral_code.trim().toUpperCase().startsWith('DCOE-') && formData.referral_code.trim().length >= 7 && (
                   <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
@@ -906,32 +992,6 @@ export default function Home() {
               <p className="text-[11px] text-slate-500 mt-1">
                 Have a friend&apos;s invite code? Enter it to get an instant +25 points welcome bonus.
               </p>
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Attendance Preference</label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="attendance"
-                    value="in-person"
-                    checked={formData.attendance_preference === 'in-person'}
-                    onChange={(e) => setFormData({ ...formData, attendance_preference: e.target.value })}
-                  />
-                  In-Person at IISc Campus (+5 bonus pts)
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="attendance"
-                    value="online"
-                    checked={formData.attendance_preference === 'online'}
-                    onChange={(e) => setFormData({ ...formData, attendance_preference: e.target.value })}
-                  />
-                  Fully Online
-                </label>
-              </div>
             </div>
           </div>
 
@@ -1092,14 +1152,27 @@ export default function Home() {
 
           {/* Reward Redemption Ladder */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Gift className="w-5 h-5 text-sky-600" />
-              Redeem Real Perks
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Gift className="w-5 h-5 text-sky-600" />
+                Redeem Real Perks
+              </h3>
+              <div className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 inline-flex items-center gap-1.5 self-start sm:self-auto">
+                <span>Available to spend:</span>
+                <span className="text-amber-700 font-extrabold">{results.totalPoints} pts</span>
+              </div>
+            </div>
 
             {claimMessage && (
               <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200">
                 {claimMessage}
+              </div>
+            )}
+
+            {claimError && (
+              <div className="p-3 bg-rose-50 text-rose-800 rounded-xl text-xs font-bold border border-rose-200 flex items-start gap-2">
+                <span className="shrink-0 mt-0.5">⚠️</span>
+                <span>{claimError}</span>
               </div>
             )}
 

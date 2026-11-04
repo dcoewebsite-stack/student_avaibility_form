@@ -28,6 +28,7 @@ export async function GET() {
         phone,
         organization,
         attendance_preference,
+        referral_source,
         user_id,
         registered_at
       FROM v_module_preferences
@@ -80,6 +81,7 @@ export async function GET() {
           phone: r.phone,
           organization: r.organization,
           attendancePreference: r.attendance_preference,
+          referralSource: r.referral_source,
           registeredAt: r.registered_at,
         };
       });

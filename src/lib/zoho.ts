@@ -7,6 +7,7 @@ export interface ZohoContactPayload {
   designation?: string;
   city?: string;
   attendance_preference?: string;
+  referral_source?: string;
   total_points?: number;
   modules_interested?: string[];
   modules_completed?: string[];
@@ -62,8 +63,8 @@ export async function syncLeadToZoho(payload: ZohoContactPayload): Promise<{ suc
       Company: payload.organization || 'Individual',
       Designation: payload.designation || '',
       City: payload.city || '',
-      Lead_Source: 'Gamified Form Platform (D-CoE)',
-      Description: `Attendance Preference: ${payload.attendance_preference || 'In-Person'}. Earned Points: ${payload.total_points || 0}. Interested Modules: ${payload.modules_interested?.join(', ') || 'None'}. Completed Modules: ${payload.modules_completed?.join(', ') || 'None'}.`,
+      Lead_Source: payload.referral_source ? `D-CoE Form (${payload.referral_source})` : 'Gamified Form Platform (D-CoE)',
+      Description: `Attendance Preference: ${payload.attendance_preference || 'In-Person'}. Heard From: ${payload.referral_source || 'Unknown'}. Earned Points: ${payload.total_points || 0}. Interested Modules: ${payload.modules_interested?.join(', ') || 'None'}. Completed Modules: ${payload.modules_completed?.join(', ') || 'None'}.`,
     };
 
     const res = await fetch(`${apiDomain}/crm/v2/Leads/upsert`, {

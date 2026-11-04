@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     designation VARCHAR(255),
     city VARCHAR(100),
     attendance_preference VARCHAR(50) DEFAULT 'in-person', -- 'in-person' or 'online'
+    referral_source VARCHAR(100) DEFAULT 'whatsapp', -- 'whatsapp', 'linkedin', 'instagram', 'friend_referral'
     total_points INTEGER DEFAULT 0 CHECK (total_points >= 0),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -136,7 +137,8 @@ CREATE TABLE IF NOT EXISTS user_rewards (
     claim_code VARCHAR(100) UNIQUE NOT NULL,
     claimed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_user_reward UNIQUE (user_id, reward_id)
 );
 
 -- 11. Referrals Table
@@ -246,6 +248,7 @@ SELECT
   p.designation,
   p.city,
   p.attendance_preference,
+  COALESCE(p.referral_source, 'whatsapp') AS referral_source,
   p.total_points,
   COALESCE(ura.rewards_redeemed, 'None') AS rewards_redeemed,
   COALESCE(pr.already_done_modules, 'None') AS already_done_modules,
@@ -290,6 +293,7 @@ SELECT
   p.phone,
   p.organization,
   p.attendance_preference,
+  COALESCE(p.referral_source, 'whatsapp') AS referral_source,
   p.id AS user_id,
   p.created_at AS registered_at
 FROM user_latest_response r

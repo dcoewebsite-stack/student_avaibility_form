@@ -42,11 +42,29 @@ export async function POST(req: Request) {
 
     const reward = rewardRes.rows[0];
 
-    // Check Eligibility
+    // Check Duplicate Claim (1 claim per reward per participant)
+    const existingClaim = await client.query(
+      'SELECT id, claim_code FROM user_rewards WHERE user_id = $1 AND reward_id = $2',
+      [userId, rewardId]
+    );
+
+    if (existingClaim.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { 
+          error: `You have already claimed ${reward.name} (Code: ${existingClaim.rows[0].claim_code}). Each reward can only be claimed once.` 
+        },
+        { status: 400 }
+      );
+    }
+
+    // Check Eligibility & Points Balance
     if (userPoints < reward.points_threshold) {
       await client.query('ROLLBACK');
       return NextResponse.json(
-        { error: `Insufficient points. You need ${reward.points_threshold} points for ${reward.name}.` },
+        { 
+          error: `Insufficient points. You have ${userPoints} points, but ${reward.name} requires ${reward.points_threshold} points. Earn more points by referring friends (+25 pts each)!` 
+        },
         { status: 400 }
       );
     }
@@ -60,7 +78,35 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4. Decrement Inventory & Generate Unique Claim Code
+    // 4. Deduct Points from User Profile
+    const newPoints = userPoints - reward.points_threshold;
+
+    // Safety guard — should never happen due to FOR UPDATE lock + check above, but be explicit
+    if (newPoints < 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: `Insufficient points. Current balance: ${userPoints} pts. Required: ${reward.points_threshold} pts.` },
+        { status: 400 }
+      );
+    }
+
+    await client.query(
+      'UPDATE profiles SET total_points = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [newPoints, userId]
+    );
+
+    // 5. Log Point Deduction in Ledger
+    await client.query(
+      `INSERT INTO point_transactions (user_id, source_type, points, description)
+       VALUES ($1, 'reward_redemption', $2, $3)`,
+      [
+        userId,
+        -reward.points_threshold,
+        `Redeemed perk: ${reward.name} (-${reward.points_threshold} pts)`
+      ]
+    );
+
+    // 6. Decrement Inventory & Generate Unique Claim Code
     const claimCode = `DCOE-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     await client.query(
@@ -68,14 +114,14 @@ export async function POST(req: Request) {
       [rewardId]
     );
 
-    // 5. Create Claim Record
+    // 7. Create Claim Record
     await client.query(
       `INSERT INTO user_rewards (user_id, reward_id, status, claim_code, claimed_at)
        VALUES ($1, $2, 'CLAIMED', $3, CURRENT_TIMESTAMP)`,
       [userId, rewardId, claimCode]
     );
 
-    // 6. Commit Transaction
+    // 8. Commit Transaction
     await client.query('COMMIT');
 
     let claimMessage = `Successfully claimed ${reward.name}! Show code ${claimCode} to redeem.`;
@@ -89,6 +135,8 @@ export async function POST(req: Request) {
       success: true,
       rewardName: reward.name,
       claimCode,
+      pointsDeducted: reward.points_threshold,
+      remainingPoints: newPoints,
       message: claimMessage,
     });
   } catch (err: any) {

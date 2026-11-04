@@ -30,6 +30,7 @@ interface StudentPreference {
   phone?: string;
   organization?: string;
   attendancePreference?: string;
+  referralSource?: string;
   registeredAt?: string;
 }
 
@@ -58,11 +59,49 @@ interface MasterRegistration {
   designation: string;
   city: string;
   attendance_preference: string;
+  referral_source?: string;
   total_points: number;
   rewards_redeemed: string;
   already_done_modules: string;
   interested_modules_and_dates: string;
   created_at: string;
+}
+
+function renderSourceBadge(source?: string) {
+  const s = (source || 'whatsapp').toLowerCase();
+  if (s.includes('whatsapp')) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> WhatsApp
+      </span>
+    );
+  }
+  if (s.includes('linkedin')) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs">
+        <span className="w-1.5 h-1.5 rounded-full bg-sky-600"></span> LinkedIn
+      </span>
+    );
+  }
+  if (s.includes('instagram')) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-pink-50 text-pink-700 border border-pink-200 shadow-2xs">
+        <span className="w-1.5 h-1.5 rounded-full bg-pink-500"></span> Instagram
+      </span>
+    );
+  }
+  if (s.includes('friend') || s.includes('referral')) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Friend Referral
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-50 text-slate-600 border border-slate-200">
+      {source || 'N/A'}
+    </span>
+  );
 }
 
 // Convert "2026-11-02" Monday to Monday -> Friday range
@@ -102,16 +141,24 @@ export default function AdminDashboardPage() {
   const [selectedModuleId, setSelectedModuleId] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('all');
 
   const fetchData = async () => {
     try {
       setRefreshing(true);
+      setFetchError(null);
+
       const [modulesRes, masterRes] = await Promise.all([
         fetch('/api/admin/modules'),
         fetch('/api/admin/master'),
       ]);
+
+      if (!modulesRes.ok || !masterRes.ok) {
+        const errData = !modulesRes.ok ? await modulesRes.json().catch(() => ({})) : await masterRes.json().catch(() => ({}));
+        throw new Error(errData?.error || `HTTP ${!modulesRes.ok ? modulesRes.status : masterRes.status}`);
+      }
 
       const modulesData = await modulesRes.json();
       const masterData = await masterRes.json();
@@ -119,12 +166,17 @@ export default function AdminDashboardPage() {
       if (modulesData.success) {
         setModules(modulesData.modules);
         setStats(modulesData.stats);
+      } else {
+        throw new Error(modulesData.error || 'Failed to load module data');
       }
       if (masterData.success) {
         setMasterList(masterData.registrations);
+      } else {
+        throw new Error(masterData.error || 'Failed to load master data');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load dashboard data:', err);
+      setFetchError(err.message || 'Failed to connect to Neon DB. Check your DATABASE_URL env variable.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -172,19 +224,50 @@ export default function AdminDashboardPage() {
   // Export current module student list to CSV
   const handleExportCSV = () => {
     if (!selectedModule) return;
-    const headers = ['#', 'Student Name', 'Preferred Date', 'Batch Window', 'Alternative Date'];
+    const headers = ['#', 'Student Name', 'Preferred Date', 'Batch Window', 'Alternative Date', 'Attendance', 'Heard From'];
     const rows = filteredStudents.map((s, idx) => [
       idx + 1,
       `"${s.name}"`,
       s.preferredDate || 'N/A',
       `"${formatBatchDate(s.preferredDate)}"`,
       s.alternativeDate || 'N/A',
+      `"${s.attendancePreference || 'in-person'}"`,
+      `"${s.referralSource || 'whatsapp'}"`,
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
     link.setAttribute('download', `${selectedModule.title.replace(/\s+/g, '_')}_Preferred_Dates.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Export Master List to CSV
+  const handleExportMasterCSV = () => {
+    if (!masterList || masterList.length === 0) return;
+    const headers = ['#', 'Full Name', 'Email', 'Phone', 'Organization', 'City', 'Attendance Preference', 'Heard From', 'Points', 'Rewards Redeemed', 'Already Done Modules', 'Interested Modules & Dates', 'Submitted At'];
+    const rows = filteredMasterList.map((m, idx) => [
+      idx + 1,
+      `"${m.full_name}"`,
+      `"${m.email}"`,
+      `"${m.phone || ''}"`,
+      `"${m.organization || ''}"`,
+      `"${m.city || ''}"`,
+      `"${m.attendance_preference || 'in-person'}"`,
+      `"${m.referral_source || 'whatsapp'}"`,
+      m.total_points,
+      `"${(m.rewards_redeemed || '').replace(/"/g, '""')}"`,
+      `"${(m.already_done_modules || '').replace(/"/g, '""')}"`,
+      `"${(m.interested_modules_and_dates || '').replace(/\n/g, ' | ').replace(/"/g, '""')}"`,
+      `"${m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN') : ''}"`,
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'DCOE_Master_Registrations.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -199,6 +282,26 @@ export default function AdminDashboardPage() {
         </div>
         <h2 className="text-lg font-bold text-slate-900 mt-4 tracking-tight">Loading D-CoE Organizer Dashboard...</h2>
         <p className="text-xs text-slate-500 mt-1">Connecting to Neon PostgreSQL database</p>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-sky-50/50 via-[#f8fafc] to-slate-100 flex flex-col items-center justify-center p-6 text-slate-800">
+        <div className="bg-white border border-rose-200 rounded-2xl p-8 max-w-md w-full shadow-lg text-center space-y-4">
+          <div className="w-12 h-12 bg-rose-50 border border-rose-200 rounded-full flex items-center justify-center mx-auto text-2xl">⚠️</div>
+          <h2 className="text-lg font-bold text-rose-900">Dashboard Failed to Load</h2>
+          <p className="text-xs text-rose-700 font-medium leading-relaxed bg-rose-50 p-3 rounded-xl border border-rose-100 font-mono break-all">
+            {fetchError}
+          </p>
+          <button
+            onClick={() => { setLoading(true); setFetchError(null); fetchData(); }}
+            className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm rounded-xl shadow-md transition active:scale-95"
+          >
+            Retry Connection
+          </button>
+        </div>
       </div>
     );
   }
@@ -508,6 +611,7 @@ export default function AdminDashboardPage() {
                           <th className="py-3 px-4 font-bold text-sky-800">Preferred Date (1st Choice)</th>
                           <th className="py-3 px-4 text-slate-500">Alternative Date (2nd Choice)</th>
                           <th className="py-3 px-4 text-slate-500">Attendance Mode</th>
+                          <th className="py-3 px-4 font-bold text-indigo-700">Heard From</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-150">
@@ -556,6 +660,9 @@ export default function AdminDashboardPage() {
                                 {student.attendancePreference === 'in-person' ? '🏛️ In-Person' : '💻 Online'}
                               </span>
                             </td>
+                            <td className="py-3.5 px-4">
+                              {renderSourceBadge(student.referralSource)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -576,15 +683,25 @@ export default function AdminDashboardPage() {
                 </p>
               </div>
 
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search student, email, module..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-50/70 border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 w-64 shadow-2xs font-medium"
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search student, email, module..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-50/70 border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 w-64 shadow-2xs font-medium"
+                  />
+                </div>
+                <button
+                  onClick={handleExportMasterCSV}
+                  disabled={filteredMasterList.length === 0}
+                  className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold shadow-2xs transition flex items-center gap-1.5 disabled:opacity-50 active:scale-95"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  Export Master CSV
+                </button>
               </div>
             </div>
 
@@ -598,6 +715,7 @@ export default function AdminDashboardPage() {
                     <th className="py-3 px-3.5">Phone</th>
                     <th className="py-3 px-3.5">Organization</th>
                     <th className="py-3 px-3.5">City</th>
+                    <th className="py-3 px-3.5 font-bold text-indigo-700">Heard From</th>
                     <th className="py-3 px-3.5 text-center">Points</th>
                     <th className="py-3 px-3.5">Rewards Redeemed</th>
                     <th className="py-3 px-3.5 text-emerald-700 font-bold">Already Done Modules</th>
@@ -614,6 +732,9 @@ export default function AdminDashboardPage() {
                       <td className="py-3 px-3.5 text-slate-600">{item.phone || 'N/A'}</td>
                       <td className="py-3 px-3.5 text-slate-600">{item.organization || 'N/A'}</td>
                       <td className="py-3 px-3.5 text-slate-600">{item.city || 'N/A'}</td>
+                      <td className="py-3 px-3.5">
+                        {renderSourceBadge(item.referral_source)}
+                      </td>
                       <td className="py-3 px-3.5 text-center">
                         <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-extrabold border border-amber-200 text-[11px] shadow-2xs">
                           {item.total_points}

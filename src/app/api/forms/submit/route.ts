@@ -14,6 +14,7 @@ export async function POST(req: Request) {
       designation,
       city,
       attendance_preference = 'in-person',
+      referral_source = 'whatsapp',
       module_selections = {},
       preferred_dates = {},
       referral_code,
@@ -117,8 +118,8 @@ export async function POST(req: Request) {
     let userResult;
     try {
       userResult = await query(
-        `INSERT INTO profiles (first_name, last_name, email, phone, organization, designation, city, attendance_preference, total_points)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO profiles (first_name, last_name, email, phone, organization, designation, city, attendance_preference, referral_source, total_points)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id, total_points`,
         [
           first_name.trim(),
@@ -129,6 +130,7 @@ export async function POST(req: Request) {
           designation || '',
           city || '',
           attendance_preference,
+          referral_source || 'whatsapp',
           pointsAwarded,
         ]
       );
@@ -239,6 +241,7 @@ export async function POST(req: Request) {
       designation,
       city,
       attendance_preference,
+      referral_source,
       total_points: finalTotalPoints,
       modules_interested: interestedModulesList,
       modules_completed: completedModulesList,

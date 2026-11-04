@@ -32,7 +32,8 @@ const pool = new Pool({
 });
 
 const sqlCreateMasterView = `
-CREATE OR REPLACE VIEW v_master_registrations AS
+DROP VIEW IF EXISTS v_master_registrations;
+CREATE VIEW v_master_registrations AS
 WITH user_latest_response AS (
   SELECT DISTINCT ON (user_id)
     user_id,
@@ -98,6 +99,7 @@ SELECT
   p.designation,
   p.city,
   p.attendance_preference,
+  COALESCE(p.referral_source, 'whatsapp') AS referral_source,
   p.total_points,
   COALESCE(ura.rewards_redeemed, 'None') AS rewards_redeemed,
   COALESCE(pr.already_done_modules, 'None') AS already_done_modules,
@@ -110,7 +112,8 @@ ORDER BY p.created_at DESC;
 `;
 
 const sqlCreateModulePreferencesView = `
-CREATE OR REPLACE VIEW v_module_preferences AS
+DROP VIEW IF EXISTS v_module_preferences;
+CREATE VIEW v_module_preferences AS
 WITH user_latest_response AS (
   SELECT DISTINCT ON (user_id)
     user_id,
@@ -141,6 +144,7 @@ SELECT
   p.phone,
   p.organization,
   p.attendance_preference,
+  COALESCE(p.referral_source, 'whatsapp') AS referral_source,
   p.id AS user_id,
   p.created_at AS registered_at
 FROM user_latest_response r
