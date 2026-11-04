@@ -1,17 +1,33 @@
 import { Pool } from 'pg';
 
-// Supports Cloud-hosted Serverless PostgreSQL (Neon.tech, Supabase Postgres, Render, Railway, etc.)
-let rawConnectionString = (process.env.DATABASE_URL || '').trim();
+// Supports Cloud-hosted Serverless PostgreSQL (Neon.tech, Supabase Postgres, Render, Railway, Vercel Postgres, etc.)
+// Check multiple common environment variable names used by Vercel and hosting providers
+function resolveConnectionString(): string {
+  const possibleKeys = [
+    'DATABASE_URL',
+    'POSTGRES_URL',
+    'POSTGRES_PRISMA_URL',
+    'POSTGRES_URL_NON_POOLING',
+    'NEON_DATABASE_URL',
+  ];
 
-// Clean up accidental surrounding quotes from copy-pasting in Vercel / env dashboards
-if (
-  (rawConnectionString.startsWith('"') && rawConnectionString.endsWith('"')) ||
-  (rawConnectionString.startsWith("'") && rawConnectionString.endsWith("'"))
-) {
-  rawConnectionString = rawConnectionString.slice(1, -1).trim();
+  for (const key of possibleKeys) {
+    let val = (process.env[key] || '').trim();
+    if (val) {
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1).trim();
+      }
+      return val;
+    }
+  }
+
+  return '';
 }
 
-const connectionString = rawConnectionString;
+const connectionString = resolveConnectionString();
 
 const isCloudPostgres = connectionString.includes('neon.tech') ||
   connectionString.includes('supabase.com') ||
@@ -32,9 +48,10 @@ export const pool = new Pool({
 });
 
 export async function query(text: string, params?: any[]) {
-  if (!connectionString) {
+  const activeConn = resolveConnectionString() || connectionString;
+  if (!activeConn) {
     console.error('DATABASE_URL is not configured in environment variables.');
-    throw new Error('DATABASE_URL is missing. Please add it to your environment variables in Vercel.');
+    throw new Error('DATABASE_URL is missing. Please add it to your environment variables in Vercel (Project Settings -> Environment Variables) and redeploy.');
   }
 
   const start = Date.now();

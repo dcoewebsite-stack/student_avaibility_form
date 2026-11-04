@@ -265,6 +265,14 @@ export default function Home() {
     try {
       const res = await fetch(`/api/user/status?email=${encodeURIComponent(emailToLookup.trim())}`);
       const data = await res.json();
+
+      if (!res.ok) {
+        const errMsg = data.error || `Server Error (${res.status}): Database could not be reached. Please check DATABASE_URL in Vercel.`;
+        setLookupError(errMsg);
+        setShowLookupModal(true);
+        return;
+      }
+
       if (data.found) {
         setResults({
           userId: data.user.id,
@@ -294,9 +302,11 @@ export default function Home() {
         setStep(4);
       } else {
         setLookupError(`No registration found for "${emailToLookup}". Please verify your email or submit the form.`);
+        setShowLookupModal(true);
       }
-    } catch (e) {
-      setLookupError('Unable to connect to server. Please try again.');
+    } catch (e: any) {
+      setLookupError(`Unable to connect to server: ${e?.message || 'Network error'}. Please check your connection.`);
+      setShowLookupModal(true);
     } finally {
       setLookupLoading(false);
     }
