@@ -18,7 +18,6 @@ export async function GET() {
         city,
         attendance_preference,
         heard_from,
-        referral_source,
         total_points,
         rewards_redeemed,
         already_done_modules,

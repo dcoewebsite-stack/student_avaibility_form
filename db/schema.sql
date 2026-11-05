@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS profiles (
     city VARCHAR(100),
     attendance_preference VARCHAR(50) DEFAULT 'in-person', -- 'in-person' or 'online'
     heard_from VARCHAR(100) DEFAULT 'whatsapp', -- 'whatsapp', 'linkedin', 'instagram'
-    referral_source VARCHAR(100) DEFAULT 'whatsapp', -- backward compatibility alias
     total_points INTEGER DEFAULT 0 CHECK (total_points >= 0),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -249,8 +248,7 @@ SELECT
   p.designation,
   p.city,
   p.attendance_preference,
-  COALESCE(p.heard_from, p.referral_source, 'whatsapp') AS heard_from,
-  COALESCE(p.referral_source, p.heard_from, 'whatsapp') AS referral_source,
+  COALESCE(p.heard_from, 'whatsapp') AS heard_from,
   p.total_points,
   COALESCE(ura.rewards_redeemed, 'None') AS rewards_redeemed,
   COALESCE(pr.already_done_modules, 'None') AS already_done_modules,
@@ -295,8 +293,7 @@ SELECT
   p.phone,
   p.organization,
   p.attendance_preference,
-  COALESCE(p.heard_from, p.referral_source, 'whatsapp') AS heard_from,
-  COALESCE(p.referral_source, p.heard_from, 'whatsapp') AS referral_source,
+  COALESCE(p.heard_from, 'whatsapp') AS heard_from,
   p.id AS user_id,
   p.created_at AS registered_at
 FROM user_latest_response r
