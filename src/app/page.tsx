@@ -129,7 +129,6 @@ export default function Home() {
         setFormData(prev => ({ 
           ...prev, 
           referral_code: ref.trim().toUpperCase(),
-          referral_source: 'friend_referral',
         }));
       }
     }
@@ -939,16 +938,6 @@ export default function Home() {
                     onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
                   />
                   <span>Instagram</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="referral_source"
-                    value="friend_referral"
-                    checked={formData.referral_source === 'friend_referral'}
-                    onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
-                  />
-                  <span>Friend Referral</span>
                 </label>
               </div>
             </div>
