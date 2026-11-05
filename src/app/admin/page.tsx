@@ -59,6 +59,7 @@ interface MasterRegistration {
   designation: string;
   city: string;
   attendance_preference: string;
+  heard_from?: string;
   referral_source?: string;
   total_points: number;
   rewards_redeemed: string;
@@ -256,7 +257,7 @@ export default function AdminDashboardPage() {
       `"${m.organization || ''}"`,
       `"${m.city || ''}"`,
       `"${m.attendance_preference || 'in-person'}"`,
-      `"${m.referral_source || 'whatsapp'}"`,
+      `"${m.heard_from || m.referral_source || 'whatsapp'}"`,
       m.total_points,
       `"${(m.rewards_redeemed || '').replace(/"/g, '""')}"`,
       `"${(m.already_done_modules || '').replace(/"/g, '""')}"`,
@@ -733,7 +734,7 @@ export default function AdminDashboardPage() {
                       <td className="py-3 px-3.5 text-slate-600">{item.organization || 'N/A'}</td>
                       <td className="py-3 px-3.5 text-slate-600">{item.city || 'N/A'}</td>
                       <td className="py-3 px-3.5">
-                        {renderSourceBadge(item.referral_source)}
+                        {renderSourceBadge(item.heard_from || item.referral_source)}
                       </td>
                       <td className="py-3 px-3.5 text-center">
                         <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-extrabold border border-amber-200 text-[11px] shadow-2xs">

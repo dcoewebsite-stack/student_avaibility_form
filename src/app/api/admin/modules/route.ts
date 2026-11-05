@@ -28,6 +28,7 @@ export async function GET() {
         phone,
         organization,
         attendance_preference,
+        heard_from,
         referral_source,
         user_id,
         registered_at
@@ -81,7 +82,7 @@ export async function GET() {
           phone: r.phone,
           organization: r.organization,
           attendancePreference: r.attendance_preference,
-          referralSource: r.referral_source,
+          referralSource: r.heard_from || r.referral_source,
           registeredAt: r.registered_at,
         };
       });

@@ -117,9 +117,10 @@ export async function POST(req: Request) {
     // 3. Database Insert User Profile (Strict Single Insertion)
     let userResult;
     try {
+      const chosenSource = referral_source || 'whatsapp';
       userResult = await query(
-        `INSERT INTO profiles (first_name, last_name, email, phone, organization, designation, city, attendance_preference, referral_source, total_points)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO profiles (first_name, last_name, email, phone, organization, designation, city, attendance_preference, referral_source, heard_from, total_points)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id, total_points`,
         [
           first_name.trim(),
@@ -130,7 +131,8 @@ export async function POST(req: Request) {
           designation || '',
           city || '',
           attendance_preference,
-          referral_source || 'whatsapp',
+          chosenSource,
+          chosenSource,
           pointsAwarded,
         ]
       );
