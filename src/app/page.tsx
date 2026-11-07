@@ -117,6 +117,7 @@ export default function Home() {
     designation: '',
     city: '',
     attendance_preference: 'in-person',
+    heard_from: 'whatsapp',
     referral_source: 'whatsapp',
     referral_code: '',
   });
@@ -912,30 +913,30 @@ export default function Home() {
                 <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
                   <input
                     type="radio"
-                    name="referral_source"
+                    name="heard_from"
                     value="whatsapp"
-                    checked={formData.referral_source === 'whatsapp'}
-                    onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
+                    checked={(formData.heard_from || formData.referral_source) === 'whatsapp'}
+                    onChange={(e) => setFormData({ ...formData, heard_from: e.target.value, referral_source: e.target.value })}
                   />
                   <span>WhatsApp</span>
                 </label>
                 <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
                   <input
                     type="radio"
-                    name="referral_source"
+                    name="heard_from"
                     value="linkedin"
-                    checked={formData.referral_source === 'linkedin'}
-                    onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
+                    checked={(formData.heard_from || formData.referral_source) === 'linkedin'}
+                    onChange={(e) => setFormData({ ...formData, heard_from: e.target.value, referral_source: e.target.value })}
                   />
                   <span>LinkedIn</span>
                 </label>
                 <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 cursor-pointer">
                   <input
                     type="radio"
-                    name="referral_source"
+                    name="heard_from"
                     value="instagram"
-                    checked={formData.referral_source === 'instagram'}
-                    onChange={(e) => setFormData({ ...formData, referral_source: e.target.value })}
+                    checked={(formData.heard_from || formData.referral_source) === 'instagram'}
+                    onChange={(e) => setFormData({ ...formData, heard_from: e.target.value, referral_source: e.target.value })}
                   />
                   <span>Instagram</span>
                 </label>

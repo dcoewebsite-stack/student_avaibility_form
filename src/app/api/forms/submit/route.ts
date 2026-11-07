@@ -14,11 +14,14 @@ export async function POST(req: Request) {
       designation,
       city,
       attendance_preference = 'in-person',
-      referral_source = 'whatsapp',
+      referral_source,
+      heard_from,
       module_selections = {},
       preferred_dates = {},
       referral_code,
     } = body;
+
+    const chosenSource = (heard_from || referral_source || 'whatsapp').trim();
 
     if (
       !email?.trim() ||
@@ -117,7 +120,6 @@ export async function POST(req: Request) {
     // 3. Database Insert User Profile (Strict Single Insertion)
     let userResult;
     try {
-      const chosenSource = referral_source || 'whatsapp';
       userResult = await query(
         `INSERT INTO profiles (first_name, last_name, email, phone, organization, designation, city, attendance_preference, heard_from, total_points)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -242,7 +244,7 @@ export async function POST(req: Request) {
       designation,
       city,
       attendance_preference,
-      referral_source,
+      referral_source: chosenSource,
       total_points: finalTotalPoints,
       modules_interested: interestedModulesList,
       modules_completed: completedModulesList,
