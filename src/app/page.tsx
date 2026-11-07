@@ -263,7 +263,14 @@ export default function Home() {
     setLookupLoading(true);
     setLookupError(null);
     try {
-      const res = await fetch(`/api/user/status?email=${encodeURIComponent(emailToLookup.trim())}`);
+      let res: Response;
+      try {
+        res = await fetch(`/api/user/status?email=${encodeURIComponent(emailToLookup.trim())}`);
+      } catch (firstErr) {
+        // Auto-retry once after 600ms in case of brief network glitch or container cold start
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        res = await fetch(`/api/user/status?email=${encodeURIComponent(emailToLookup.trim())}`);
+      }
       const data = await res.json();
 
       if (!res.ok) {
