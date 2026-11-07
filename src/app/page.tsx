@@ -401,7 +401,9 @@ export default function Home() {
 
           <div className="flex items-center gap-2 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-1.5 rounded-full border border-amber-200 shadow-2xs">
             <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" />
-            <span className="font-bold text-amber-900 text-xs sm:text-sm">{calculateLivePoints()} Pts</span>
+            <span className="font-bold text-amber-900 text-xs sm:text-sm">
+              {results && typeof results.totalPoints === 'number' ? results.totalPoints : calculateLivePoints()} Pts
+            </span>
           </div>
         </div>
       </header>
