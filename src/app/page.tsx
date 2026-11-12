@@ -263,13 +263,17 @@ export default function Home() {
     setLookupLoading(true);
     setLookupError(null);
     try {
-      let res: Response;
-      try {
-        res = await fetch(`/api/user/status?email=${encodeURIComponent(emailToLookup.trim())}`);
-      } catch (firstErr) {
-        // Auto-retry once after 600ms in case of brief network glitch or container cold start
-        await new Promise((resolve) => setTimeout(resolve, 600));
-        res = await fetch(`/api/user/status?email=${encodeURIComponent(emailToLookup.trim())}`);
+      let res!: Response;
+      const apiUrl = `/api/user/status?email=${encodeURIComponent(emailToLookup.trim())}`;
+      const delays = [0, 800, 1500]; // instant, then 800ms, then 1.5s
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        try {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, delays[attempt]));
+          res = await fetch(apiUrl);
+          break; // success
+        } catch (fetchErr) {
+          if (attempt === delays.length - 1) throw fetchErr; // all retries exhausted
+        }
       }
       const data = await res.json();
 
