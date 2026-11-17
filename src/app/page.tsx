@@ -136,6 +136,7 @@ export default function Home() {
   }, []);
 
   const [loading, setLoading] = useState(false);
+  const [claimingRewardId, setClaimingRewardId] = useState<string | null>(null);
   const [results, setResults] = useState<any>(null);
   const [claimMessage, setClaimMessage] = useState<string>('');
   const [claimError, setClaimError] = useState<string>('');
@@ -152,6 +153,8 @@ export default function Home() {
   const [popup, setPopup] = useState<{ value: number; id: number } | null>(null);
   const prevPointsRef = useRef<number>(10); // start bonus is 10
 
+  const isValidReferralCode = (code: string) => /^DCOE-[A-F0-9]{6}$/.test(code.trim().toUpperCase());
+
   // Local Live Point Estimate
   const calculateLivePoints = useCallback(() => {
     let pts = 10; // Start bonus
@@ -159,16 +162,16 @@ export default function Home() {
       if (status === 'interested') pts += 5;
       if (status === 'completed') pts += 10;
     });
-    // Only count dates for modules marked 'interested'
+    // Only count unique dates for modules marked 'interested'
     Object.entries(preferredDates).forEach(([modIdStr, dates]) => {
       const modId = parseInt(modIdStr);
       if (moduleSelections[modId] === 'interested' && dates) {
-        pts += dates.filter(Boolean).length * 5;
+        pts += new Set(dates.filter(Boolean)).size * 5;
       }
     });
     if (formData.attendance_preference === 'in-person') pts += 5;
     if (formData.first_name && formData.email) pts += 10;
-    if (formData.referral_code && formData.referral_code.trim().toUpperCase().startsWith('DCOE-') && formData.referral_code.trim().length >= 7) {
+    if (formData.referral_code && isValidReferralCode(formData.referral_code)) {
       pts += 25; // Referral Welcome Bonus
     }
     return pts;
@@ -177,14 +180,14 @@ export default function Home() {
   useEffect(() => {
     const currentPoints = calculateLivePoints();
     const diff = currentPoints - prevPointsRef.current;
-    if (diff !== 0) {
+    if (diff !== 0 && step !== 4 && !results) {
       setPopup({ value: diff, id: Date.now() });
       const timer = setTimeout(() => setPopup(null), 1600);
       prevPointsRef.current = currentPoints;
       return () => clearTimeout(timer);
     }
     prevPointsRef.current = currentPoints;
-  }, [calculateLivePoints]);
+  }, [calculateLivePoints, step, results]);
 
   const handleModuleToggle = (id: number, status: 'interested' | 'completed') => {
     setModuleSelections((prev) => {
@@ -221,6 +224,8 @@ export default function Home() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
+    setClaimMessage('');
+    setClaimError('');
     setLoading(true);
     try {
       const response = await fetch('/api/forms/submit', {
@@ -235,7 +240,7 @@ export default function Home() {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (response.ok) {
         setResults(data);
         setStep(4);
@@ -248,7 +253,7 @@ export default function Home() {
             message: data.error,
           });
         } else {
-          setSubmitError({ message: data.error || 'Submission failed' });
+          setSubmitError({ message: data.error || `Submission failed (${response.status})` });
         }
       }
     } catch (err) {
@@ -262,6 +267,8 @@ export default function Home() {
     if (!emailToLookup || !emailToLookup.trim()) return;
     setLookupLoading(true);
     setLookupError(null);
+    setClaimMessage('');
+    setClaimError('');
     try {
       let res!: Response;
       const apiUrl = `/api/user/status?email=${encodeURIComponent(emailToLookup.trim())}`;
@@ -275,7 +282,7 @@ export default function Home() {
           if (attempt === delays.length - 1) throw fetchErr; // all retries exhausted
         }
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         const errMsg = data.error || `Server Error (${res.status}): Database could not be reached. Please check DATABASE_URL in Vercel.`;
@@ -324,15 +331,16 @@ export default function Home() {
   };
 
   const handleClaimReward = async (rewardId: string) => {
-    if (!results?.userId) return;
+    if (!results?.userId || claimingRewardId) return;
     setClaimError('');
+    setClaimingRewardId(rewardId);
     try {
       const res = await fetch('/api/rewards/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: results.userId, rewardId }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setClaimMessage(data.message);
         setClaimError('');
@@ -358,6 +366,8 @@ export default function Home() {
     } catch (e) {
       setClaimError('Network error — unable to reach server. Please check your connection.');
       setClaimMessage('');
+    } finally {
+      setClaimingRewardId(null);
     }
   };
 
@@ -679,6 +689,7 @@ export default function Home() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {[0, 1].map((idx) => {
                             const selectedVal = dates[idx] || '';
+                            const otherSelectedVal = dates[idx === 0 ? 1 : 0] || '';
                             const batchCalculated = selectedVal ? formatWorkshopBatch(selectedVal) : null;
                             return (
                               <div key={idx} className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200 space-y-2">
@@ -696,8 +707,8 @@ export default function Home() {
                                   {upcomingMondayGroups.map((grp) => (
                                     <optgroup key={grp.monthYear} label={grp.monthYear}>
                                       {grp.items.map((m) => (
-                                        <option key={m.value} value={m.value}>
-                                          {m.label}
+                                        <option key={m.value} value={m.value} disabled={otherSelectedVal !== '' && m.value === otherSelectedVal}>
+                                          {m.label}{otherSelectedVal !== '' && m.value === otherSelectedVal ? ' (Selected in other option)' : ''}
                                         </option>
                                       ))}
                                     </optgroup>
@@ -1222,14 +1233,14 @@ export default function Home() {
                     ) : (
                       <button
                         onClick={() => handleClaimReward(reward.id)}
-                        disabled={!canClaim}
+                        disabled={!canClaim || claimingRewardId !== null}
                         className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm ${
-                          canClaim
+                          canClaim && claimingRewardId === null
                             ? 'bg-sky-600 hover:bg-sky-700 text-white active:scale-95'
                             : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                         }`}
                       >
-                        {canClaim ? 'Redeem' : 'Locked'}
+                        {claimingRewardId === reward.id ? 'Redeeming...' : canClaim ? 'Redeem' : 'Locked'}
                       </button>
                     )}
                   </div>
@@ -1271,9 +1282,10 @@ export default function Home() {
                     />
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(activeReferralUrl);
-                        setCopiedLink(true);
-                        setTimeout(() => setCopiedLink(false), 2000);
+                        navigator.clipboard?.writeText(activeReferralUrl).then(() => {
+                          setCopiedLink(true);
+                          setTimeout(() => setCopiedLink(false), 2000);
+                        }).catch(() => {});
                       }}
                       className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition active:scale-95 shrink-0"
                     >
@@ -1312,8 +1324,9 @@ export default function Home() {
                     </a>
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(shareMessage);
-                        alert('Referral text copied for Instagram/SMS!');
+                        navigator.clipboard?.writeText(shareMessage)
+                          .then(() => alert('Referral text copied for Instagram/SMS!'))
+                          .catch(() => {});
                       }}
                       className="p-2 bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 hover:opacity-90 text-white rounded-full transition-opacity flex items-center justify-center shadow-sm"
                       title="Copy for Instagram/SMS"
@@ -1334,6 +1347,8 @@ export default function Home() {
                 setStep(0);
                 setResults(null);
                 setSubmitError(null);
+                setClaimMessage('');
+                setClaimError('');
               }}
               className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition"
             >

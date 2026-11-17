@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import type { PoolClient } from 'pg';
+import { pool } from '@/lib/db';
 import { syncLeadToZoho } from '@/lib/zoho';
 
+const VALID_MODULE_IDS = new Set(['1', '2', '3', '4', '5', '6', '7', '8']);
+const VALID_HEARD_FROM = new Set(['whatsapp', 'linkedin', 'instagram']);
+
 export async function POST(req: Request) {
+  let client: PoolClient | null = null;
+  let inTransaction = false;
+
   try {
     const body = await req.json();
     const {
@@ -21,7 +28,9 @@ export async function POST(req: Request) {
       referral_code,
     } = body;
 
-    const chosenSource = (heard_from || referral_source || 'whatsapp').trim();
+    const rawSource = (heard_from || referral_source || 'whatsapp').toString().trim().toLowerCase();
+    const chosenSource = VALID_HEARD_FROM.has(rawSource) ? rawSource : 'whatsapp';
+    const normalizedAttendance = attendance_preference === 'online' ? 'online' : 'in-person';
 
     if (
       !email?.trim() ||
@@ -38,28 +47,81 @@ export async function POST(req: Request) {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // 1. Strict 1-submission-per-email check
-    try {
-      const existingUser = await query(
-        `SELECT id, first_name, total_points FROM profiles WHERE LOWER(TRIM(email)) = $1`,
-        [normalizedEmail]
-      );
-
-      if (existingUser.rows && existingUser.rows.length > 0) {
-        return NextResponse.json(
-          {
-            error: `The email "${normalizedEmail}" has already submitted this form and claimed points (${existingUser.rows[0].total_points} pts). Submissions are strictly limited to 1 per participant.`,
-            alreadySubmitted: true,
-            existingPoints: existingUser.rows[0].total_points,
-          },
-          { status: 409 }
-        );
+    // Sanitize module_selections & preferred_dates (exploit-proof & consistent with UI)
+    const sanitizedSelections: Record<string, 'interested' | 'completed'> = {};
+    if (module_selections && typeof module_selections === 'object') {
+      for (const [modId, status] of Object.entries(module_selections)) {
+        if (VALID_MODULE_IDS.has(String(modId)) && (status === 'interested' || status === 'completed')) {
+          sanitizedSelections[String(modId)] = status;
+        }
       }
-    } catch (checkErr) {
-      console.error('Email lookup error:', checkErr);
     }
 
-    // 2. Calculate Points Server-Side (Exploit-Proof)
+    const sanitizedDates: Record<string, string[]> = {};
+    if (preferred_dates && typeof preferred_dates === 'object') {
+      for (const [modId, datesList] of Object.entries(preferred_dates)) {
+        const key = String(modId);
+        if (sanitizedSelections[key] === 'interested' && Array.isArray(datesList)) {
+          const uniqueDates = Array.from(
+            new Set(
+              datesList
+                .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+                .map((d) => d.trim())
+            )
+          ).slice(0, 2);
+          if (uniqueDates.length > 0) {
+            sanitizedDates[key] = uniqueDates;
+          }
+        }
+      }
+    }
+
+    client = await pool.connect();
+
+    // 1. Strict 1-submission-per-email check
+    const existingUser = await client.query(
+      `SELECT id, first_name, total_points FROM profiles WHERE LOWER(TRIM(email)) = $1`,
+      [normalizedEmail]
+    );
+
+    if (existingUser.rows && existingUser.rows.length > 0) {
+      return NextResponse.json(
+        {
+          error: `The email "${normalizedEmail}" has already submitted this form and claimed points (${existingUser.rows[0].total_points} pts). Submissions are strictly limited to 1 per participant.`,
+          alreadySubmitted: true,
+          existingPoints: existingUser.rows[0].total_points,
+        },
+        { status: 409 }
+      );
+    }
+
+    // 2. Verify referral code against registered profiles if provided
+    const cleanReferralCode = typeof referral_code === 'string' ? referral_code.trim().toUpperCase() : '';
+    let referrerId: string | null = null;
+    if (cleanReferralCode) {
+      if (!/^DCOE-[A-F0-9]{6}$/.test(cleanReferralCode)) {
+        return NextResponse.json(
+          { error: `Invalid referral code format "${cleanReferralCode}". Expected format: DCOE-XXXXXX (or leave it blank).` },
+          { status: 400 }
+        );
+      }
+
+      const referrerIdPrefix = cleanReferralCode.substring(5).toLowerCase();
+      const refLookup = await client.query(
+        `SELECT id FROM profiles WHERE substring(id::text, 1, 6) = $1 AND LOWER(TRIM(email)) != $2 LIMIT 1`,
+        [referrerIdPrefix, normalizedEmail]
+      );
+
+      if (refLookup.rows.length === 0) {
+        return NextResponse.json(
+          { error: `Referral code "${cleanReferralCode}" was not found. Please double-check the code or leave the field blank.` },
+          { status: 400 }
+        );
+      }
+      referrerId = refLookup.rows[0].id;
+    }
+
+    // 3. Calculate Points Server-Side (Exploit-Proof)
     let pointsAwarded = 0;
     const pointBreakdown: { reason: string; points: number }[] = [];
 
@@ -70,7 +132,7 @@ export async function POST(req: Request) {
     let interestedCount = 0;
     let completedCount = 0;
 
-    Object.values(module_selections).forEach((status) => {
+    Object.values(sanitizedSelections).forEach((status) => {
       if (status === 'interested') {
         interestedCount++;
         pointsAwarded += 5;
@@ -88,10 +150,8 @@ export async function POST(req: Request) {
     }
 
     let datesCount = 0;
-    Object.values(preferred_dates).forEach((datesList: any) => {
-      if (Array.isArray(datesList)) {
-        datesCount += datesList.filter(Boolean).length;
-      }
+    Object.values(sanitizedDates).forEach((datesList) => {
+      datesCount += datesList.length;
     });
 
     if (datesCount > 0) {
@@ -100,7 +160,7 @@ export async function POST(req: Request) {
       pointBreakdown.push({ reason: `Provided ${datesCount} Preferred Date(s)`, points: datePoints });
     }
 
-    if (attendance_preference === 'in-person') {
+    if (normalizedAttendance === 'in-person') {
       pointsAwarded += 5;
       pointBreakdown.push({ reason: 'In-Person Attendance Preference Bonus', points: 5 });
     }
@@ -108,149 +168,99 @@ export async function POST(req: Request) {
     pointsAwarded += 10;
     pointBreakdown.push({ reason: 'Completed Contact Details', points: 10 });
 
-    // Referral Welcome Bonus (+25 points)
-    let validReferralCode: string | null = null;
-    const cleanReferralCode = typeof referral_code === 'string' ? referral_code.trim().toUpperCase() : '';
-    if (cleanReferralCode.startsWith('DCOE-') && cleanReferralCode.length >= 7) {
-      validReferralCode = cleanReferralCode;
+    if (referrerId && cleanReferralCode) {
       pointsAwarded += 25;
       pointBreakdown.push({ reason: `Referral Welcome Bonus (${cleanReferralCode})`, points: 25 });
     }
 
-    // 3. Database Insert User Profile (Strict Single Insertion)
-    let userResult;
-    try {
-      userResult = await query(
-        `INSERT INTO profiles (first_name, last_name, email, phone, organization, designation, city, attendance_preference, heard_from, total_points)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING id, total_points`,
-        [
-          first_name.trim(),
-          last_name ? last_name.trim() : '',
-          normalizedEmail,
-          phone || '',
-          organization || '',
-          designation || '',
-          city || '',
-          attendance_preference,
-          chosenSource,
-          pointsAwarded,
-        ]
-      );
-    } catch (dbErr: any) {
-      // Catch unique constraint violation (duplicate email)
-      if (dbErr.code === '23505' || dbErr.message?.includes('profiles_email_key')) {
-        return NextResponse.json(
-          {
-            error: `The email "${normalizedEmail}" has already been submitted. Submissions are limited to 1 per participant.`,
-            alreadySubmitted: true,
-          },
-          { status: 409 }
-        );
-      }
+    // 4. Begin Isolated Transaction
+    await client.query('BEGIN');
+    inTransaction = true;
 
-      console.error('Database Insert Error:', dbErr);
-      return NextResponse.json(
-        {
-          error: `Database connection error: ${dbErr.message || 'Failed to save to Neon DB'}. Please verify DATABASE_URL is set in Vercel Environment Variables and redeploy.`,
-        },
-        { status: 500 }
-      );
-    }
+    // 4.1 Insert Profile
+    const userResult = await client.query(
+      `INSERT INTO profiles (first_name, last_name, email, phone, organization, designation, city, attendance_preference, heard_from, total_points)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, total_points`,
+      [
+        first_name.trim(),
+        last_name ? last_name.trim() : '',
+        normalizedEmail,
+        phone.trim(),
+        organization.trim(),
+        designation ? designation.trim() : '',
+        city.trim(),
+        normalizedAttendance,
+        chosenSource,
+        pointsAwarded,
+      ]
+    );
 
     const userId = userResult.rows[0].id;
     const finalTotalPoints = userResult.rows[0].total_points;
 
-    // 3. Log Point Transaction Ledger
-    try {
-      await query(
+    // 4.2 Log Point Transaction Ledger
+    await client.query(
+      `INSERT INTO point_transactions (user_id, source_type, points, description)
+       VALUES ($1, 'form_submission', $2, $3)`,
+      [userId, pointsAwarded, `D-CoE Form Submission: ${pointBreakdown.map((p) => p.reason).join(', ')}`]
+    );
+
+    // 4.3 Save Form Response Payload
+    await client.query(
+      `INSERT INTO responses (user_id, answer, points_awarded)
+       VALUES ($1, $2, $3)`,
+      [userId, JSON.stringify({ module_selections: sanitizedSelections, preferred_dates: sanitizedDates }), pointsAwarded]
+    );
+
+    // 4.4 Award Referrer Bonus if valid referral code used
+    if (referrerId && cleanReferralCode) {
+      await client.query(
+        `UPDATE profiles 
+         SET total_points = total_points + 25, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [referrerId]
+      );
+
+      await client.query(
         `INSERT INTO point_transactions (user_id, source_type, points, description)
-         VALUES ($1, 'form_submission', $2, $3)`,
-        [userId, pointsAwarded, `D-CoE Form Submission: ${pointBreakdown.map(p => p.reason).join(', ')}`]
+         VALUES ($1, 'referral_bonus', 25, $2)`,
+        [referrerId, `Referral bonus for inviting ${first_name.trim()} (${normalizedEmail})`]
       );
-    } catch (e) {}
 
-    // 4. Save Form Response Payload
-    try {
-      await query(
-        `INSERT INTO responses (user_id, answer, points_awarded)
-         VALUES ($1, $2, $3)`,
-        [userId, JSON.stringify({ module_selections, preferred_dates }), pointsAwarded]
+      await client.query(
+        `INSERT INTO referrals (referrer_user_id, referred_user_id, referral_code, status, points_awarded)
+         VALUES ($1, $2, $3, 'VERIFIED', 25)`,
+        [referrerId, userId, cleanReferralCode]
       );
-    } catch (e) {}
-
-    // 4.5 Handle Referrer Reward Logic
-    if (validReferralCode) {
-      try {
-        const referrerIdPrefix = validReferralCode.substring(5).toLowerCase();
-        // Give referrer 25 points if not self-referral
-        const refRes = await query(
-          `UPDATE profiles 
-           SET total_points = total_points + 25 
-           WHERE substring(id::text, 1, 6) = $1 AND LOWER(TRIM(email)) != $2
-           RETURNING id`,
-          [referrerIdPrefix, normalizedEmail]
-        );
-        
-        if (refRes.rows.length > 0) {
-          const referrerId = refRes.rows[0].id;
-          await query(
-            `INSERT INTO point_transactions (user_id, source_type, points, description)
-             VALUES ($1, 'referral_bonus', 25, $2)`,
-            [referrerId, `Referral bonus for inviting ${first_name.trim()} (${normalizedEmail})`]
-          );
-
-          // Also record in referrals table
-          try {
-            await query(
-              `INSERT INTO referrals (referrer_user_id, referred_user_id, referral_code, status, points_awarded)
-               VALUES ($1, $2, $3, 'VERIFIED', 25)`,
-              [referrerId, userId, validReferralCode]
-            );
-          } catch (refTableErr) {}
-        }
-      } catch (e) {
-        console.error('Referral Processing Error:', e);
-      }
     }
 
-    // Check if current user has referred anyone (Community Builder badge check)
-    let hasReferred = false;
-    try {
-      const checkRef = await query(
-        `SELECT COUNT(*) as count FROM point_transactions WHERE user_id = $1 AND source_type = 'referral_bonus'`,
-        [userId]
-      );
-      if (checkRef.rows.length > 0 && parseInt(checkRef.rows[0].count) > 0) {
-        hasReferred = true;
-      }
-    } catch (e) {}
+    await client.query('COMMIT');
+    inTransaction = false;
 
-    // 5. Trigger Async Zoho CRM Sync
-    const interestedModulesList = Object.entries(module_selections)
-      .filter(([_, val]) => val === 'interested')
+    // 5. Trigger Zoho CRM Sync (non-fatal if Zoho fails)
+    const interestedModulesList = Object.entries(sanitizedSelections)
+      .filter(([, val]) => val === 'interested')
       .map(([id]) => `Module #${id}`);
 
-    const completedModulesList = Object.entries(module_selections)
-      .filter(([_, val]) => val === 'completed')
+    const completedModulesList = Object.entries(sanitizedSelections)
+      .filter(([, val]) => val === 'completed')
       .map(([id]) => `Module #${id}`);
 
-    const zohoPayload = {
-      first_name,
-      last_name,
-      email,
-      phone,
-      organization,
-      designation,
-      city,
-      attendance_preference,
+    const zohoResult = await syncLeadToZoho({
+      first_name: first_name.trim(),
+      last_name: last_name ? last_name.trim() : '',
+      email: normalizedEmail,
+      phone: phone.trim(),
+      organization: organization.trim(),
+      designation: designation ? designation.trim() : '',
+      city: city.trim(),
+      attendance_preference: normalizedAttendance,
       referral_source: chosenSource,
       total_points: finalTotalPoints,
       modules_interested: interestedModulesList,
       modules_completed: completedModulesList,
-    };
-
-    const zohoResult = await syncLeadToZoho(zohoPayload);
+    });
 
     // 6. Badges Unlocked Logic
     const badges = [
@@ -273,13 +283,12 @@ export async function POST(req: Request) {
         title: 'Community Builder',
         description: 'Refer a friend to unlock this badge.',
         icon: '🤝',
-        unlocked: hasReferred,
+        unlocked: false,
       },
     ];
 
     const userReferralCode = `DCOE-${userId.toString().substring(0, 6).toUpperCase()}`;
 
-    // Generate dynamic referral link based on deployment domain or host header
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
     const proto = req.headers.get('x-forwarded-proto') || (host?.includes('localhost') ? 'http' : 'https');
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (host ? `${proto}://${host}` : 'https://dcoeiisc.com');
@@ -297,10 +306,19 @@ export async function POST(req: Request) {
       zohoSync: zohoResult,
     });
   } catch (error: any) {
+    if (client && inTransaction) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('Rollback failed:', rollbackErr);
+      }
+    }
     console.error('Submit API Error:', error);
     return NextResponse.json(
       { error: error.message || 'Internal Server Error' },
       { status: 500 }
     );
+  } finally {
+    if (client) client.release();
   }
 }

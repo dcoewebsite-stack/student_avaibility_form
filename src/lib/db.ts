@@ -47,6 +47,11 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
+// Prevent unhandled 'error' events on idle Neon/pooler clients from crashing the process
+pool.on('error', (err) => {
+  console.error('Unexpected PostgreSQL pool error:', err.message);
+});
+
 export async function query(text: string, params?: any[]) {
   const activeConn = resolveConnectionString() || connectionString;
   if (!activeConn) {

@@ -33,7 +33,16 @@ export async function GET(req: Request) {
     // Query both referrals table and point_transactions for referral bonuses
     const refHistoryRes = await query(
       `SELECT 
-         COALESCE(p.first_name || ' ' || SUBSTRING(COALESCE(p.last_name, ''), 1, 1) || '.', 'Friend') AS friend_name,
+         COALESCE(
+           NULLIF(
+             TRIM(
+               COALESCE(p.first_name, '') ||
+               CASE WHEN COALESCE(TRIM(p.last_name), '') <> '' THEN ' ' || SUBSTRING(TRIM(p.last_name), 1, 1) || '.' ELSE '' END
+             ),
+             ''
+           ),
+           'Friend'
+         ) AS friend_name,
          r.points_awarded,
          r.created_at
        FROM referrals r
@@ -108,9 +117,18 @@ export async function GET(req: Request) {
     );
 
     let completedModuleCount = 0;
-    if (respRes.rows.length > 0 && respRes.rows[0].answer?.module_selections) {
+    let hasPreferredDates = false;
+    if (respRes.rows.length > 0 && respRes.rows[0].answer) {
       const selections = respRes.rows[0].answer.module_selections;
-      completedModuleCount = Object.values(selections).filter((s) => s === 'completed').length;
+      if (selections && typeof selections === 'object') {
+        completedModuleCount = Object.values(selections).filter((s) => s === 'completed').length;
+      }
+      const dates = respRes.rows[0].answer.preferred_dates;
+      if (dates && typeof dates === 'object') {
+        hasPreferredDates = Object.values(dates).some(
+          (arr) => Array.isArray(arr) && arr.some(Boolean)
+        );
+      }
     }
 
     // 5. Generate referral code & link

@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
+import type { PoolClient } from 'pg';
 import { pool } from '@/lib/db';
 
 export async function POST(req: Request) {
-  const client = await pool.connect();
+  let client: PoolClient | null = null;
+  let inTransaction = false;
+
   try {
     const { userId, rewardId } = await req.json();
 
@@ -13,8 +17,11 @@ export async function POST(req: Request) {
       );
     }
 
+    client = await pool.connect();
+
     // 1. Begin Isolated Transaction
     await client.query('BEGIN');
+    inTransaction = true;
 
     // 2. Fetch User Points
     const userRes = await client.query(
@@ -24,6 +31,7 @@ export async function POST(req: Request) {
 
     if (userRes.rows.length === 0) {
       await client.query('ROLLBACK');
+      inTransaction = false;
       return NextResponse.json({ error: 'User profile not found.' }, { status: 404 });
     }
 
@@ -37,6 +45,7 @@ export async function POST(req: Request) {
 
     if (rewardRes.rows.length === 0) {
       await client.query('ROLLBACK');
+      inTransaction = false;
       return NextResponse.json({ error: 'Reward not found.' }, { status: 404 });
     }
 
@@ -50,6 +59,7 @@ export async function POST(req: Request) {
 
     if (existingClaim.rows.length > 0) {
       await client.query('ROLLBACK');
+      inTransaction = false;
       return NextResponse.json(
         { 
           error: `You have already claimed ${reward.name} (Code: ${existingClaim.rows[0].claim_code}). Each reward can only be claimed once.` 
@@ -61,6 +71,7 @@ export async function POST(req: Request) {
     // Check Eligibility & Points Balance
     if (userPoints < reward.points_threshold) {
       await client.query('ROLLBACK');
+      inTransaction = false;
       return NextResponse.json(
         { 
           error: `Insufficient points. You have ${userPoints} points, but ${reward.name} requires ${reward.points_threshold} points. Earn more points by referring friends (+25 pts each)!` 
@@ -72,6 +83,7 @@ export async function POST(req: Request) {
     // Check Inventory
     if (reward.inventory <= 0) {
       await client.query('ROLLBACK');
+      inTransaction = false;
       return NextResponse.json(
         { error: `Sorry, ${reward.name} is currently out of stock.` },
         { status: 400 }
@@ -81,9 +93,9 @@ export async function POST(req: Request) {
     // 4. Deduct Points from User Profile
     const newPoints = userPoints - reward.points_threshold;
 
-    // Safety guard — should never happen due to FOR UPDATE lock + check above, but be explicit
     if (newPoints < 0) {
       await client.query('ROLLBACK');
+      inTransaction = false;
       return NextResponse.json(
         { error: `Insufficient points. Current balance: ${userPoints} pts. Required: ${reward.points_threshold} pts.` },
         { status: 400 }
@@ -106,8 +118,8 @@ export async function POST(req: Request) {
       ]
     );
 
-    // 6. Decrement Inventory & Generate Unique Claim Code
-    const claimCode = `DCOE-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    // 6. Decrement Inventory & Generate Unique Claim Code (crypto hex)
+    const claimCode = `DCOE-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
     await client.query(
       'UPDATE rewards SET inventory = inventory - 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
@@ -123,6 +135,7 @@ export async function POST(req: Request) {
 
     // 8. Commit Transaction
     await client.query('COMMIT');
+    inTransaction = false;
 
     let claimMessage = `Successfully claimed ${reward.name}! Show code ${claimCode} to redeem.`;
     if (reward.id === 'b1000000-0000-0000-0000-000000000005' || reward.name.toLowerCase().includes('key ring')) {
@@ -140,13 +153,19 @@ export async function POST(req: Request) {
       message: claimMessage,
     });
   } catch (err: any) {
-    await client.query('ROLLBACK');
+    if (client && inTransaction) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('Rollback failed:', rollbackErr);
+      }
+    }
     console.error('Reward Claim Error:', err);
     return NextResponse.json(
       { error: err.message || 'Failed to claim reward.' },
       { status: 500 }
     );
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }

@@ -25,8 +25,17 @@ export async function getZohoAccessToken(): Promise<string | null> {
   }
 
   try {
-    const url = `${accountsDomain}/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
-    const response = await fetch(url, { method: 'POST' });
+    const params = new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+    });
+    const response = await fetch(`${accountsDomain}/oauth/v2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
     const data = await response.json();
 
     if (data.access_token) {

@@ -156,6 +156,45 @@ WHERE (r.answer->'module_selections'->>m.id) = 'interested'
 ORDER BY m.id::int ASC, preferred_date ASC, p.first_name ASC;
 `;
 
+const sqlCreateClaimViews = `
+CREATE OR REPLACE VIEW v_keyring_manual_collections AS
+SELECT 
+    p.id AS student_id,
+    TRIM(p.first_name || ' ' || COALESCE(p.last_name, '')) AS student_name,
+    p.email,
+    p.phone,
+    p.organization AS college_or_organization,
+    p.city,
+    p.attendance_preference,
+    ur.claim_code,
+    ur.status AS claim_status,
+    ur.claimed_at,
+    r.name AS reward_name
+FROM user_rewards ur
+JOIN profiles p ON ur.user_id = p.id
+JOIN rewards r ON ur.reward_id = r.id
+WHERE r.id = 'b1000000-0000-0000-0000-000000000005' OR r.name ILIKE '%key ring%'
+ORDER BY ur.claimed_at DESC;
+
+CREATE OR REPLACE VIEW v_all_claimed_rewards AS
+SELECT 
+    p.id AS student_id,
+    TRIM(p.first_name || ' ' || COALESCE(p.last_name, '')) AS student_name,
+    p.email,
+    p.phone,
+    p.organization,
+    p.city,
+    r.name AS reward_name,
+    r.points_threshold,
+    ur.claim_code,
+    ur.status,
+    ur.claimed_at
+FROM user_rewards ur
+JOIN profiles p ON ur.user_id = p.id
+JOIN rewards r ON ur.reward_id = r.id
+ORDER BY ur.claimed_at DESC;
+`;
+
 async function main() {
   console.log('🔌 Connecting to Neon PostgreSQL...');
   try {
@@ -166,6 +205,10 @@ async function main() {
     console.log('2️⃣ Creating view: v_module_preferences...');
     await pool.query(sqlCreateModulePreferencesView);
     console.log('   ✅ v_module_preferences created successfully!');
+
+    console.log('3️⃣ Creating views: v_keyring_manual_collections & v_all_claimed_rewards...');
+    await pool.query(sqlCreateClaimViews);
+    console.log('   ✅ Claim views created successfully!');
 
     console.log('\n🔍 Verifying v_master_registrations...');
     const masterRes = await pool.query('SELECT * FROM v_master_registrations LIMIT 2');

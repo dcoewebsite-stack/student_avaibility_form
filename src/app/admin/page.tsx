@@ -194,10 +194,13 @@ export default function AdminDashboardPage() {
   // Filter students within the selected module
   const filteredStudents = useMemo(() => {
     if (!selectedModule) return [];
+    const q = searchQuery.toLowerCase();
     return selectedModule.students.filter((st) => {
       const matchesSearch =
-        searchQuery === '' ||
-        st.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        q === '' ||
+        st.name?.toLowerCase().includes(q) ||
+        st.email?.toLowerCase().includes(q) ||
+        st.organization?.toLowerCase().includes(q) ||
         (st.preferredDate && st.preferredDate.includes(searchQuery));
 
       const matchesBatch =
@@ -221,27 +224,37 @@ export default function AdminDashboardPage() {
     );
   }, [masterList, searchQuery]);
 
+  const downloadCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
+    const escapeCell = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const csvLines = [
+      headers.map(escapeCell).join(','),
+      ...rows.map((row) => row.map(escapeCell).join(',')),
+    ];
+    const blob = new Blob(['\uFEFF' + csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Export current module student list to CSV
   const handleExportCSV = () => {
     if (!selectedModule) return;
     const headers = ['#', 'Student Name', 'Preferred Date', 'Batch Window', 'Alternative Date', 'Attendance', 'Heard From'];
     const rows = filteredStudents.map((s, idx) => [
       idx + 1,
-      `"${s.name}"`,
+      s.name || '',
       s.preferredDate || 'N/A',
-      `"${formatBatchDate(s.preferredDate)}"`,
+      formatBatchDate(s.preferredDate),
       s.alternativeDate || 'N/A',
-      `"${s.attendancePreference || 'in-person'}"`,
-      `"${s.referralSource || 'whatsapp'}"`,
+      s.attendancePreference || 'in-person',
+      s.referralSource || 'whatsapp',
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${selectedModule.title.replace(/\s+/g, '_')}_Preferred_Dates.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCSV(`${selectedModule.title.replace(/\s+/g, '_')}_Preferred_Dates.csv`, headers, rows);
   };
 
   // Export Master List to CSV
@@ -250,27 +263,20 @@ export default function AdminDashboardPage() {
     const headers = ['#', 'Full Name', 'Email', 'Phone', 'Organization', 'City', 'Attendance Preference', 'Heard From', 'Points', 'Rewards Redeemed', 'Already Done Modules', 'Interested Modules & Dates', 'Submitted At'];
     const rows = filteredMasterList.map((m, idx) => [
       idx + 1,
-      `"${m.full_name}"`,
-      `"${m.email}"`,
-      `"${m.phone || ''}"`,
-      `"${m.organization || ''}"`,
-      `"${m.city || ''}"`,
-      `"${m.attendance_preference || 'in-person'}"`,
-      `"${m.heard_from || 'whatsapp'}"`,
+      m.full_name || '',
+      m.email || '',
+      m.phone || '',
+      m.organization || '',
+      m.city || '',
+      m.attendance_preference || 'in-person',
+      m.heard_from || 'whatsapp',
       m.total_points,
-      `"${(m.rewards_redeemed || '').replace(/"/g, '""')}"`,
-      `"${(m.already_done_modules || '').replace(/"/g, '""')}"`,
-      `"${(m.interested_modules_and_dates || '').replace(/\n/g, ' | ').replace(/"/g, '""')}"`,
-      `"${m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN') : ''}"`,
+      m.rewards_redeemed || '',
+      m.already_done_modules || '',
+      (m.interested_modules_and_dates || '').replace(/\n/g, ' | '),
+      m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN') : '',
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'DCOE_Master_Registrations.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCSV('DCOE_Master_Registrations.csv', headers, rows);
   };
 
   if (loading) {

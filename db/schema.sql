@@ -303,3 +303,43 @@ WHERE (r.answer->'module_selections'->>m.id) = 'interested'
   AND (r.answer->'preferred_dates'->m.id->>0) IS NOT NULL
   AND (r.answer->'preferred_dates'->m.id->>0) != ''
 ORDER BY m.id::int ASC, preferred_date ASC, p.first_name ASC;
+
+-- ============================================================================
+-- 16. Claimed Rewards Views (for Organizers & Verification)
+-- ============================================================================
+CREATE OR REPLACE VIEW v_keyring_manual_collections AS
+SELECT 
+    p.id AS student_id,
+    TRIM(p.first_name || ' ' || COALESCE(p.last_name, '')) AS student_name,
+    p.email,
+    p.phone,
+    p.organization AS college_or_organization,
+    p.city,
+    p.attendance_preference,
+    ur.claim_code,
+    ur.status AS claim_status,
+    ur.claimed_at,
+    r.name AS reward_name
+FROM user_rewards ur
+JOIN profiles p ON ur.user_id = p.id
+JOIN rewards r ON ur.reward_id = r.id
+WHERE r.id = 'b1000000-0000-0000-0000-000000000005' OR r.name ILIKE '%key ring%'
+ORDER BY ur.claimed_at DESC;
+
+CREATE OR REPLACE VIEW v_all_claimed_rewards AS
+SELECT 
+    p.id AS student_id,
+    TRIM(p.first_name || ' ' || COALESCE(p.last_name, '')) AS student_name,
+    p.email,
+    p.phone,
+    p.organization,
+    p.city,
+    r.name AS reward_name,
+    r.points_threshold,
+    ur.claim_code,
+    ur.status,
+    ur.claimed_at
+FROM user_rewards ur
+JOIN profiles p ON ur.user_id = p.id
+JOIN rewards r ON ur.reward_id = r.id
+ORDER BY ur.claimed_at DESC;
